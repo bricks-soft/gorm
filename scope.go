@@ -2,6 +2,7 @@ package gorm
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -24,6 +25,8 @@ type Scope struct {
 	skipLeft        bool
 	fields          *[]*Field
 	selectAttrs     *[]string
+
+	context context.Context
 }
 
 // IndirectValue return scope's reflect value's indirect value
@@ -33,7 +36,20 @@ func (scope *Scope) IndirectValue() reflect.Value {
 
 // New create a new Scope without search information
 func (scope *Scope) New(value interface{}) *Scope {
-	return &Scope{db: scope.NewDB(), Search: &search{}, Value: value}
+	return &Scope{db: scope.NewDB(), Search: &search{}, Value: value, context: scope.context}
+}
+
+func (scope *Scope) WithContext(ctx context.Context) *Scope {
+	clone := scope.New(nil)
+	clone.context = ctx
+	return clone
+}
+
+func (scope *Scope) getCtx() context.Context {
+	if scope.context == nil {
+		return context.TODO()
+	}
+	return scope.context
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -361,7 +377,7 @@ func (scope *Scope) Exec() *Scope {
 	defer scope.trace(NowFunc())
 
 	if !scope.HasError() {
-		if result, err := scope.SQLDB().Exec(scope.SQL, scope.SQLVars...); scope.Err(err) == nil {
+		if result, err := scope.SQLDB().ExecContext(scope.getCtx(), scope.SQL, scope.SQLVars...); scope.Err(err) == nil {
 			if count, err := result.RowsAffected(); scope.Err(err) == nil {
 				scope.db.RowsAffected = count
 			}
@@ -402,7 +418,7 @@ func (scope *Scope) InstanceGet(name string) (interface{}, bool) {
 // Begin start a transaction
 func (scope *Scope) Begin() *Scope {
 	if db, ok := scope.SQLDB().(sqlDb); ok {
-		if tx, err := db.Begin(); scope.Err(err) == nil {
+		if tx, err := db.BeginTx(scope.getCtx(), &sql.TxOptions{}); scope.Err(err) == nil {
 			scope.db.db = interface{}(tx).(SQLCommon)
 			scope.InstanceSet("gorm:started_transaction", true)
 		}
