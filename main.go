@@ -106,6 +106,21 @@ func Open(dialect string, args ...interface{}) (db *DB, err error) {
 	return
 }
 
+func OpenDB(dialect string, dbSQL SQLCommon) *DB {
+	db := &DB{
+		db:     dbSQL,
+		logger: defaultLogger,
+
+		// Create a clone of the default logger to avoid mutating a shared object when
+		// multiple gorm connections are created simultaneously.
+		callbacks: DefaultCallback.clone(defaultLogger),
+		dialect:   newDialect(dialect, dbSQL),
+	}
+	db.parent = db
+
+	return db
+}
+
 // New clone a new db connection without search conditions
 func (s *DB) New() *DB {
 	clone := s.clone()
